@@ -43,12 +43,12 @@ O objetivo é preservar o jogo e abrir espaço para a comunidade estudar, corrig
 | Renderização | RDP nativo, planos com prioridades, sprites CI4 e efeitos de sombra/destaque |
 | Áudio | Sequenciador GEMS nativo, amostras PCM e mixer RSP de 8 vozes |
 | Desempenho | **59,41 FPS de média** em uma sessão de 6.600 quadros no Ares, não 60 FPS absolutamente travados |
-| N64 real | Compatibilidade pretendida; a medição acima é de emulador e precisa de validação adicional no hardware |
+| N64 real | **Testado pelo autor no console real**, com desempenho observado semelhante ao Ares; sem telemetria instrumental publicada do hardware |
 | Cooperativo de 4 jogadores | Código experimental presente em `game/runtime/players34.cpp`; testes completos pendentes |
 | Save | **Não implementado**; o jogo original não possui salvamento |
 | Tradução PT-BR | **Planejada**, não incluída nesta versão |
 
-**Sobre os números:** a medição é de uma sessão da variante `heavy_60_opt`, no Ares com paraLLEl-RDP, em 5 de novembro de 2026. O ritmo usa **1 VBlank por quadro**; foram observadas janelas próximas de 59,82 FPS e uma janela mínima de aproximadamente 55,65 FPS. Esses números não garantem a mesma taxa em todas as fases nem no N64 real.
+**Sobre os números:** a medição é de uma sessão da variante `heavy_60_opt`, no Ares com paraLLEl-RDP, em 5 de novembro de 2026. O ritmo usa **1 VBlank por quadro**; foram observadas janelas próximas de 59,82 FPS e uma janela mínima de aproximadamente 55,65 FPS. O autor também testou o port no **N64 real** e relatou desempenho equivalente ao observado no Ares. Não há, porém, benchmark instrumental do console para afirmar FPS exatos em hardware real ou garantir o mesmo resultado em todas as fases.
 
 ### Arquitetura
 
@@ -108,7 +108,7 @@ Se algum submódulo estiver ausente, execute `git submodule update --init --recu
 - Validar **quatro controles simultâneos**, seleção, continues, mortes e transições de fase no N64.
 - Acrescentar **save persistente de progresso entre fases**, sem modificar desnecessariamente o funcionamento original.
 - Implementar **tradução PT-BR** e revisar fontes/caracteres.
-- Testar mais fases e chefes, sincronização, música e efeitos no **N64 real**.
+- Ampliar os testes de fases, chefes, sincronização, música e efeitos no **N64 real**.
 - Receber correções, documentação e otimizações reproduzíveis da comunidade.
 
 Quer contribuir? Leia [CONTRIBUTING.md](CONTRIBUTING.md) e abra uma issue ou pull request. **Não envie ROMs comerciais nem recursos extraídos do jogo.**
@@ -140,12 +140,12 @@ The goal is to keep the project open for others to learn from, improve and exten
 | Graphics | Native RDP renderer; priority planes, CI4 sprites, shadow/highlight effects |
 | Audio | Native GEMS sequencer, PCM sample assets, eight-voice RSP mixer |
 | Performance | **59.41 FPS average** over a 6,600-frame Ares session; not a perfect locked 60 |
-| Real N64 | Intended target; the performance figures above are from emulation and require additional console validation |
+| Real N64 | **Tested by the project owner on actual hardware**, with performance reported as similar to Ares; no instrumented hardware benchmark published |
 | Four-player co-op | Experimental support in `game/runtime/players34.cpp`; complete playtesting pending |
 | Save system | **Not implemented**; the original game has no save feature |
 | Brazilian Portuguese | **Planned**, not shipped in this build |
 
-**Performance note:** these figures come from a `heavy_60_opt` run using Ares with paraLLEl-RDP on November 5, 2026. The game targets **one VBlank per presented frame**. Many sampled windows were around 59.82 FPS; the slowest window was approximately 55.65 FPS. Results may vary by scene and are not a real-hardware guarantee.
+**Performance note:** these figures come from a `heavy_60_opt` run using Ares with paraLLEl-RDP on November 5, 2026. The game targets **one VBlank per presented frame**. Many sampled windows were around 59.82 FPS; the slowest window was approximately 55.65 FPS. The project owner has also tested the port on **real N64 hardware** and reported performance comparable to Ares. However, exact real-hardware FPS figures are not yet established by an instrumented benchmark, and results may vary by scene.
 
 ### How it works
 
@@ -205,7 +205,7 @@ If Git submodules are missing, run `git submodule update --init --recursive`. If
 - Verify **four-controller cooperative play**, character selection, continues, deaths and stage transitions on N64.
 - Add **persistent between-stage progress saving** without changing the original gameplay unnecessarily.
 - Implement **Brazilian Portuguese localization**, including font coverage.
-- Validate more stages, bosses, synchronization and audio on **real N64 hardware**.
+- Expand **real N64 hardware** testing across stages, bosses, synchronization and audio.
 - Welcome documented community optimizations and bug fixes.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. **Never attach commercial ROMs or extracted game assets.**
