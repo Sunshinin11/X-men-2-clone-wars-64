@@ -1,299 +1,217 @@
-# X-Men 2: Clone Wars — Native Nintendo 64 Port
+<div align="center">
 
-[Português do Brasil](#português-do-brasil) | [English](#english)
+# X-Men 2: Clone Wars — Nintendo 64
 
----
+**A native Nintendo 64 port of the Sega Genesis / Mega Drive classic.**  
+**Um port nativo de X-Men 2: Clone Wars para Nintendo 64.**
 
-## Português do Brasil
+![Nintendo 64](https://img.shields.io/badge/platform-Nintendo%2064-20252b?style=flat-square)
+![libdragon](https://img.shields.io/badge/SDK-libdragon-0d9488?style=flat-square)
+![Status](https://img.shields.io/badge/status-work%20in%20progress-f59e0b?style=flat-square)
+![ROM](https://img.shields.io/badge/game%20ROM-not%20included-52525b?style=flat-square)
 
-Porte nativo de **X-Men 2: Clone Wars** (Sega Genesis / Mega Drive) para o **Nintendo 64**, baseado na engenharia reversa e metodologia de recompilação estática do projeto `crabsmack/xmen2-pc`.
+**[Português](#pt-br) · [English](#en) · [Contributing](CONTRIBUTING.md) · [Legal notices](NOTICE.md)**
 
-O código da lógica original em Motorola 68000 foi traduzido para C/C++ estático e compilado nativamente para a arquitetura MIPS VR4300 do N64, eliminando a sobrecarga de interpretadores e emuladores. Gráficos e áudio são executados diretamente no hardware do Nintendo 64 (RDP e RSP).
-
-### Características e Arquitetura
-
-- **Variante de Referência (`heavy_60_opt`)**: Otimizada para entrega estável em 60 quadros por segundo (60 Hz / 1 VBlank no padrão NTSC).
-- **Renderizador RDP Nativo**:
-  - Extração de planos 2D em passes de prioridade unificados (`x2_plane_dual`).
-  - Cache de comandos RDP para planos com scroll uniforme (`X2_PLANE_CMD_CACHE`), minimizando a carga da CPU.
-  - Renderização direta de sprites pelo RDP com máscaras de textura CI4 e recorte nativo.
-  - Suporte completo a efeitos de sombra e destaque (*Shadow/Highlight*) via materiais RDP de duas passagens.
-  - Triplo buffer no display do N64 (`display_init` com 3 buffers de 16 bpp) para desacoplar a renderização da CPU.
-- **Sistema de Áudio Nativo via RSP**:
-  - Sequenciador de música GEMS reescrito nativamente em C++.
-  - Síntese por reprodução de amostras PCM com 8 vozes via RSP mixer do *libdragon*.
-  - Amostras pré-processadas com variantes de afinação/taxa (`voices_v.pcm`), reduzindo drasticamente o tráfego DMA do cartucho.
-  - Processamento fatiado (*sliced mixing*) intercalado estrategicamente na janela de espera da apresentação de vídeo, evitando quedas de quadros (*hitches*).
-- **Sem Telemetria**: Código limpo de diagnóstico e instrumentação, sem chamadas de profiling em tempo de execução, garantindo desempenho máximo.
+</div>
 
 ---
 
-### Estado Atual
+| Siberia / Sibéria | Character select / Seleção |
+| :---: | :---: |
+| ![Siberia](docs/media/siberia.png) | ![Character select](docs/media/select.png) |
+| Savage Land / Terra Selvagem | Magneto |
+| ![Savage Land](docs/media/savage-land.png) | ![Magneto](docs/media/magneto.png) |
 
-- **Compatibilidade**: Executável no Nintendo 64 real (EverDrive-64, SummerCart64) e em emuladores com precisão de baixo nível (Ares v148+, simple64).
-- **Taxa de Quadros**: 60 FPS reais na grande maioria dos cenários e combates intensos da variante `heavy_60_opt`.
-- **Fidelidade Gráfica**: Planos A e B, prioridades de tiles, animações, operadores de transparência/sombra fiéis ao Mega Drive.
-- **Fidelidade Sonora**: Músicas, efeitos sonoros e vozes digitalizadas reproduzidos com clareza a 12 kHz / 16-bit estéreo.
+<sub>Images already in this repository are illustrative; they are not hardware-verification evidence. / Imagens ilustrativas existentes no repositório; não comprovam execução no console real.</sub>
 
----
+<a id="pt-br"></a>
+## 🇧🇷 Português (Brasil)
 
-### Trabalhos Futuros e Melhorias em Andamento
+### O projeto
 
-1. **Tradução (PT-BR)**: Integração dos scripts e fontes da tradução para o português do Brasil.
-2. **Sistema de Salvamento (Save)**: Implementação de salvamento persistente na memória do cartucho (SRAM / EEPROM / FlashRAM) para salvar o progresso entre as fases.
-3. **Suporte a 4 Jogadores**: Auditoria e habilitação das rotinas de controle para 4 jogadores simultâneos (`game/runtime/players34.cpp`).
+Este projeto leva **X-Men 2: Clone Wars** (Mega Drive / Genesis) ao **Nintendo 64**, sem depender da emulação completa do console original.
 
----
+A lógica do jogo foi traduzida de Motorola 68000 para C/C++ estático e compilada para a CPU **MIPS VR4300** do N64. A plataforma usa **libdragon**, com renderização de sprites e planos pelo **RDP** e reprodução de áudio pelo **RSP**. O trabalho parte da engenharia reversa de [crabsmack/xmen2-pc](https://github.com/crabsmack/xmen2-pc).
 
-### Requisitos de Sistema e Ferramentas
+O objetivo é preservar o jogo e abrir espaço para a comunidade estudar, corrigir e aperfeiçoar o port.
 
-Para compilar a ROM, você precisará de:
+### Estado atual
 
-- **Sistema Operacional**:
-  - Linux (Ubuntu 20.04/22.04/24.04 recomendados) **OU**
-  - Windows 10/11 com **WSL2** (Windows Subsystem for Linux - Ubuntu).
-- **Pacotes do Sistema (Host)**:
-  - `build-essential` (`gcc`, `g++`, `make`)
-  - `python3` (versão 3.8 ou superior)
-- **libdragon Toolchain & SDK**:
-  - SDK do libdragon instalado (caminho padrão `/opt/libdragon` ou definido na variável `N64_INST`).
-  - Utilitários MIPS (`mips64-elf-gcc`, `mips64-elf-g++`, `mips64-elf-nm`, `mkdfs`, `n64tool`).
-- **ROM Original do Jogo**:
-  - É necessário fornecer um dump limpo e legítimo do cartucho original do Sega Genesis / Mega Drive.
+| Recurso | Situação |
+| --- | --- |
+| Execução nativa no N64 | Implementada; ROM gerada por compilação cruzada MIPS |
+| Renderização | RDP nativo, planos com prioridades, sprites CI4 e efeitos de sombra/destaque |
+| Áudio | Sequenciador GEMS nativo, amostras PCM e mixer RSP de 8 vozes |
+| Desempenho | **59,41 FPS de média** em uma sessão de 6.600 quadros no Ares, não 60 FPS absolutamente travados |
+| N64 real | Compatibilidade pretendida; a medição acima é de emulador e precisa de validação adicional no hardware |
+| Cooperativo de 4 jogadores | Código experimental presente em `game/runtime/players34.cpp`; testes completos pendentes |
+| Save | **Não implementado**; o jogo original não possui salvamento |
+| Tradução PT-BR | **Planejada**, não incluída nesta versão |
 
----
+**Sobre os números:** a medição é de uma sessão da variante `heavy_60_opt`, no Ares com paraLLEl-RDP, em 5 de novembro de 2026. O ritmo usa **1 VBlank por quadro**; foram observadas janelas próximas de 59,82 FPS e uma janela mínima de aproximadamente 55,65 FPS. Esses números não garantem a mesma taxa em todas as fases nem no N64 real.
 
-### Requisitos da ROM de Entrada
+### Arquitetura
 
-Por motivos legais, este repositório **NÃO contém nenhuma ROM, asset gráfico ou dado de áudio proprietário**. Você deve fornecer seu próprio arquivo ROM extraído de seu cartucho original.
+- **CPU:** código de jogo recompilado estaticamente para MIPS VR4300, com rotinas de ponte adaptadas ao N64.
+- **Vídeo:** RDP da libdragon, cache de comandos dos planos de rolagem uniforme, prioridades de sprites e materiais de sombra/destaque.
+- **Áudio:** sequenciador GEMS em C++, oito vozes PCM no RSP e processamento fatiado durante a espera pela apresentação.
+- **Memória:** requer **Expansion Pak (8 MiB de RDRAM)**.
+- **Variante de referência:** `xmen2_heavy_60_opt.z64`.
 
-O arquivo deve ser colocado exatamente no caminho:
-`game/xmen2.bin`
+A compilação verifica símbolos proibidos de subsistemas de emulação e valida os índices das amostras de áudio. Confira `tools/n64_native_audit.py` e a documentação técnica em [platform/n64](platform/n64/).
 
-#### Especificações da ROM:
-- **Título**: *X-Men 2: Clone Wars* (USA/Europe, Rev 00 / World)
-- **Formato**: Binário puro (flat binary, descompactado, sem cabeçalhos SMD/BIN de emulador)
-- **Tamanho exato**: 2.097.152 bytes (2 MiB)
-- **Hashes de Verificação**:
-  - **SHA-1**: `61409e6cf6065ab67d8952b891d8edcf47777193`
-  - **SHA-256**: `30bb09be17b15c9b86683967459fe3b9162f4d77dafab466b39c1b86254ee58f`
-  - **MD5**: `b687660446f6e49dfd465cd0ef9f0bc3`
+### Compilar a ROM
 
----
+> **O jogo original não acompanha este repositório.** É obrigatório fornecer um dump próprio do cartucho de Mega Drive/Genesis, compatível com o hash esperado.
 
-### Instruções de Compilação
+**Requisitos:** Linux ou Windows com WSL2, Git, Python 3, `make`, compilador C/C++ do host, SDK/toolchain MIPS da **libdragon** (por padrão em `/opt/libdragon`) e os submódulos Git.
 
-#### 1. Clonar o Repositório
+**1. Clonar com os submódulos:**
 
-Certifique-se de clonar com os submódulos (`--recursive`):
-
-```bash
+~~~bash
 git clone --recursive https://github.com/Sunshinin11/X-men-2-clone-wars-64.git
 cd X-men-2-clone-wars-64
-```
+~~~
 
-Se já tiver clonado sem `--recursive`, inicialize o submódulo:
-```bash
-git submodule update --init --recursive
-```
+**2. Fornecer o dump original** em `game/xmen2.bin`:
 
-#### 2. Adicionar a ROM
+| Propriedade | Valor esperado |
+| --- | --- |
+| Jogo | X-Men 2: Clone Wars (USA/Europe, Rev 00 / World) |
+| Formato | BIN puro, sem cabeçalho SMD |
+| Tamanho | **2.097.152 bytes (2 MiB)** |
+| SHA-1 | `61409e6cf6065ab67d8952b891d8edcf47777193` |
+| SHA-256 | `30bb09be17b15c9b86683967459fe3b9162f4d77dafab466b39c1b86254ee58f` |
 
-Copie sua ROM de Mega Drive verificada para a pasta `game/`:
-```bash
-cp /caminho/para/sua/rom.bin game/xmen2.bin
-```
+O script confere o SHA-1 antes da compilação. Para usar outro caminho, defina `XMEN2_ROM` apontando para seu dump.
 
-#### 3. Compilar
+**3. Compilar:**
 
-##### No Linux / WSL:
-Execute o script de compilação automatizado:
-```bash
-chmod +x build_n64.sh
+Linux / WSL:
+
+~~~bash
 ./build_n64.sh
-```
+~~~
 
-##### No Windows (PowerShell):
-Se você utiliza Windows com WSL configurado:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build_n64.ps1
-```
+Windows / PowerShell, com WSL2 configurado:
 
-#### 4. Resultado da Compilação
+~~~powershell
+.\build_n64.ps1
+~~~
 
-Após a conclusão, a ROM do Nintendo 64 será gerada na raiz do projeto:
-- **`xmen2_heavy_60_opt.z64`**
+**4. Resultado:** `xmen2_heavy_60_opt.z64`, na raiz do repositório. Use um emulador compatível, como **Ares v148+**, ou um flashcart compatível no N64 com Expansion Pak.
 
-Você pode carregá-la diretamente no Ares v148+, simple64 ou transferi-la para seu EverDrive-64.
+Se algum submódulo estiver ausente, execute `git submodule update --init --recursive`. Se a compilação reclamar de `mips64-elf-g++`, confira a instalação da libdragon e a variável `N64_INST`.
 
----
+### Próximos passos
 
-### Resolução de Problemas
+- Validar **quatro controles simultâneos**, seleção, continues, mortes e transições de fase no N64.
+- Acrescentar **save persistente de progresso entre fases**, sem modificar desnecessariamente o funcionamento original.
+- Implementar **tradução PT-BR** e revisar fontes/caracteres.
+- Testar mais fases e chefes, sincronização, música e efeitos no **N64 real**.
+- Receber correções, documentação e otimizações reproduzíveis da comunidade.
 
-- **Erro `missing game ROM` ou `short ROM`**:
-  O arquivo `game/xmen2.bin` não foi encontrado ou não possui exatamente 2.097.152 bytes. Verifique o hash do seu dump.
-- **Erro `command not found: mips64-elf-gcc` ou `N64_INST` ausente**:
-  O SDK libdragon não está instalado ou configurado no PATH. Instale o libdragon em `/opt/libdragon` ou defina a variável `export N64_INST=/seu/caminho/libdragon`.
-- **Erro de quebra de linha (`\r: command not found`)**:
-  Se você clonou no Windows com conversão CRLF e executou no WSL, execute:
-  ```bash
-  dos2unix build_n64.sh
-  ```
-- **Erro `submodule segagenesisrecomp not found`**:
-  Execute `git submodule update --init --recursive`.
+Quer contribuir? Leia [CONTRIBUTING.md](CONTRIBUTING.md) e abra uma issue ou pull request. **Não envie ROMs comerciais nem recursos extraídos do jogo.**
+
+### Créditos e licenças
+
+Port para N64: [Sunshinin11](https://github.com/Sunshinin11) e colaboradores. Base de engenharia reversa: [crabsmack/xmen2-pc](https://github.com/crabsmack/xmen2-pc). SDK: [libdragon](https://github.com/DragonMinded/libdragon).
+
+O código original deste repositório tem licença MIT, mas **componentes de terceiros possuem licenças próprias**, incluindo uma dependência **PolyForm Noncommercial**. Consulte [LICENSE](LICENSE) e [NOTICE.md](NOTICE.md) antes de redistribuir ou reutilizar. Nenhum direito sobre o jogo original é concedido; X-Men e seus personagens pertencem aos respectivos titulares.
 
 ---
 
-### Licença e Direitos Autorais
+<a id="en"></a>
+## 🇬🇧 English
 
-- O código deste porte é disponibilizado sob os termos das licenças open-source do projeto base `crabsmack/xmen2-pc` e do SDK `libdragon`.
-- *X-Men 2: Clone Wars* é marca registrada e propriedade intelectual da Sega Enterprises, Marvel Characters, Inc. e seus respectivos detentores de direitos.
-- Este projeto não contém, não compartilha e não apoia a distribuição de material protegido por direitos autorais.
+### About
 
----
+**X-Men 2: Clone Wars** for the Sega Genesis / Mega Drive, ported to the **Nintendo 64** without running a complete Genesis emulator.
 
-## English
+The original Motorola 68000 gameplay logic has been statically translated to C/C++ and cross-compiled for the N64's **MIPS VR4300**. The platform uses **libdragon**, the **RDP** for native 2D rendering, and the **RSP** for sampled audio. It builds on the reverse-engineering work of [crabsmack/xmen2-pc](https://github.com/crabsmack/xmen2-pc).
 
-Native port of **X-Men 2: Clone Wars** (Sega Genesis / Mega Drive) for the **Nintendo 64**, based on the reverse engineering and static recompilation methodology of `crabsmack/xmen2-pc`.
+The goal is to keep the project open for others to learn from, improve and extend.
 
-The original Motorola 68000 game logic was translated to static C/C++ and compiled natively for the N64's MIPS VR4300 CPU, completely eliminating interpreter and emulation overhead. Video and audio are handled directly on the Nintendo 64 hardware (RDP and RSP).
+### Project status
 
-### Architecture and Features
+| Area | Status |
+| --- | --- |
+| Native N64 execution | Implemented; MIPS cross-compiled ROM |
+| Graphics | Native RDP renderer; priority planes, CI4 sprites, shadow/highlight effects |
+| Audio | Native GEMS sequencer, PCM sample assets, eight-voice RSP mixer |
+| Performance | **59.41 FPS average** over a 6,600-frame Ares session; not a perfect locked 60 |
+| Real N64 | Intended target; the performance figures above are from emulation and require additional console validation |
+| Four-player co-op | Experimental support in `game/runtime/players34.cpp`; complete playtesting pending |
+| Save system | **Not implemented**; the original game has no save feature |
+| Brazilian Portuguese | **Planned**, not shipped in this build |
 
-- **Reference Variant (`heavy_60_opt`)**: Tuned for a rock-solid 60 FPS (60 Hz / 1-VBlank presentation pace on NTSC).
-- **Native RDP Renderer**:
-  - Unified priority plane extraction (`x2_plane_dual`).
-  - Cached RDP command sequences for uniform scrolling planes (`X2_PLANE_CMD_CACHE`), minimizing CPU overhead.
-  - Native RDP sprite packet rasterization with CI4 texture tiles and alpha masks.
-  - Full hardware support for Genesis Shadow/Highlight color passes through multi-material RDP pipelines.
-  - Triple buffering (`display_init` with 3 buffers at 16 bpp) decoupling simulation from frame presentation.
-- **Native RSP Audio Engine**:
-  - GEMS music sequencer rewritten natively in C++.
-  - 8-voice PCM sample playback driven by the libdragon RSP audio mixer.
-  - Pre-baked rate/pitch variants (`voices_v.pcm`), drastically minimizing cartridge PI DMA transfers.
-  - Sliced audio mixing interleaved into the post-schedule display wait window, avoiding frame hitches.
-- **Zero Telemetry**: Clean codebase free of diagnostic logging, counters, or runtime profiling probes, ensuring maximum execution performance.
+**Performance note:** these figures come from a `heavy_60_opt` run using Ares with paraLLEl-RDP on November 5, 2026. The game targets **one VBlank per presented frame**. Many sampled windows were around 59.82 FPS; the slowest window was approximately 55.65 FPS. Results may vary by scene and are not a real-hardware guarantee.
 
----
+### How it works
 
-### Current Status
+- **CPU:** statically compiled MIPS VR4300 gameplay logic and N64-specific bridge code.
+- **Video:** libdragon RDP, cached commands for scrolling planes, sprite priorities and shadow/highlight materials.
+- **Audio:** native C++ GEMS sequencer, eight-voice PCM mixing on the RSP and sliced audio work during presentation pacing.
+- **Memory:** **Expansion Pak required (8 MiB RDRAM)**.
+- **Reference output:** `xmen2_heavy_60_opt.z64`.
 
-- **Compatibility**: Verified on real Nintendo 64 hardware (EverDrive-64, SummerCart64) and cycle-accurate emulators (Ares v148+, simple64).
-- **Frame Rate**: Smooth 60 FPS across complex stages and boss battles in the `heavy_60_opt` variant.
-- **Visual Accuracy**: Authentic Planes A & B, sprite priorities, palette cycling, and Shadow/Highlight transparency effects.
-- **Audio Fidelity**: Full musical score, sound effects, and digital speech samples rendered cleanly at 12 kHz / 16-bit stereo.
+The build includes native-link checks for prohibited emulation symbols and validates the packed audio variant index. See `tools/n64_native_audit.py` and [platform/n64](platform/n64/) for technical details.
 
----
+### Build your own ROM
 
-### Future Roadmap
+> **No commercial game ROM or original game assets are distributed here.** You must supply your own compatible Genesis/Mega Drive cartridge dump.
 
-1. **Translations**: Integrating custom text injection and language packs (e.g. Brazilian Portuguese).
-2. **Save System**: Implementing persistent saving to cartridge battery/non-volatile memory (SRAM / EEPROM / FlashRAM) for stage progression.
-3. **4-Player Multiplayer**: Verification and full enablement of 4-player cooperative gameplay routines (`game/runtime/players34.cpp`).
+**Prerequisites:** Linux or Windows with WSL2, Git, Python 3, `make`, a host C/C++ compiler, the **libdragon** N64 SDK/MIPS toolchain (default: `/opt/libdragon`), and the Git submodules.
 
----
+**1. Clone recursively:**
 
-### Prerequisites & Build Environment
-
-To build the ROM from source, ensure you have:
-
-- **Operating System**:
-  - Linux (Ubuntu 20.04/22.04/24.04 recommended) **OR**
-  - Windows 10/11 using **WSL2** (Windows Subsystem for Linux - Ubuntu).
-- **Host Tools**:
-  - `build-essential` (`gcc`, `g++`, `make`)
-  - `python3` (version 3.8+)
-- **libdragon Toolchain & SDK**:
-  - libdragon SDK installed (standard path `/opt/libdragon` or exported as `N64_INST`).
-  - Cross-compiler utilities (`mips64-elf-gcc`, `mips64-elf-g++`, `mips64-elf-nm`, `mkdfs`, `n64tool`).
-- **Original Game ROM**:
-  - You must supply a clean, legitimate dump of the original Sega Genesis / Mega Drive cartridge.
-
----
-
-### Input ROM Requirements
-
-For legal reasons, this repository **DOES NOT contain any proprietary ROMs, artwork, or audio data**. You must supply your own ROM file dumped from your legally owned cartridge.
-
-Place the ROM at:
-`game/xmen2.bin`
-
-#### ROM Specifications:
-- **Game**: *X-Men 2: Clone Wars* (USA/Europe, Rev 00 / World)
-- **Format**: Flat uncompressed binary (headerless, not SMD)
-- **Exact Size**: 2,097,152 bytes (2 MiB)
-- **Checksums**:
-  - **SHA-1**: `61409e6cf6065ab67d8952b891d8edcf47777193`
-  - **SHA-256**: `30bb09be17b15c9b86683967459fe3b9162f4d77dafab466b39c1b86254ee58f`
-  - **MD5**: `b687660446f6e49dfd465cd0ef9f0bc3`
-
----
-
-### Build Instructions
-
-#### 1. Clone Repository
-
-Clone recursively to fetch required submodules:
-
-```bash
+~~~bash
 git clone --recursive https://github.com/Sunshinin11/X-men-2-clone-wars-64.git
 cd X-men-2-clone-wars-64
-```
+~~~
 
-If cloned non-recursively, run:
-```bash
-git submodule update --init --recursive
-```
+**2. Supply the original game dump** at `game/xmen2.bin`:
 
-#### 2. Provide the ROM
+| Property | Required value |
+| --- | --- |
+| Game | X-Men 2: Clone Wars (USA/Europe, Rev 00 / World) |
+| Format | Headerless, flat BIN (not SMD) |
+| Size | **2,097,152 bytes (2 MiB)** |
+| SHA-1 | `61409e6cf6065ab67d8952b891d8edcf47777193` |
+| SHA-256 | `30bb09be17b15c9b86683967459fe3b9162f4d77dafab466b39c1b86254ee58f` |
 
-Copy your verified Mega Drive ROM dump into `game/xmen2.bin`:
-```bash
-cp /path/to/your/rom.bin game/xmen2.bin
-```
+The build verifies the SHA-1. To use a different local path, set the `XMEN2_ROM` environment variable.
 
-#### 3. Build
+**3. Build:**
 
-##### On Linux / WSL:
-Run the build script:
-```bash
-chmod +x build_n64.sh
+Linux / WSL:
+
+~~~bash
 ./build_n64.sh
-```
+~~~
 
-##### On Windows (PowerShell):
-If using Windows with WSL installed:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build_n64.ps1
-```
+Windows / PowerShell (WSL2 required):
 
-#### 4. Build Output
+~~~powershell
+.\build_n64.ps1
+~~~
 
-Upon completion, the target ROM is generated in the project root:
-- **`xmen2_heavy_60_opt.z64`**
+**4. Output:** `xmen2_heavy_60_opt.z64` in the repository root. Run it in a compatible emulator such as **Ares v148+**, or on an Expansion Pak-equipped N64 with a suitable flashcart.
 
-Load it on Ares v148+, simple64, or copy it to your EverDrive-64 flashcart.
+If Git submodules are missing, run `git submodule update --init --recursive`. If the compiler is missing, check your libdragon installation and `N64_INST`.
 
----
+### Roadmap
 
-### Troubleshooting
+- Verify **four-controller cooperative play**, character selection, continues, deaths and stage transitions on N64.
+- Add **persistent between-stage progress saving** without changing the original gameplay unnecessarily.
+- Implement **Brazilian Portuguese localization**, including font coverage.
+- Validate more stages, bosses, synchronization and audio on **real N64 hardware**.
+- Welcome documented community optimizations and bug fixes.
 
-- **Error `missing game ROM` or `short ROM`**:
-  `game/xmen2.bin` is missing or not exactly 2,097,152 bytes. Verify your ROM dump against the expected hashes.
-- **Error `command not found: mips64-elf-gcc`**:
-  libdragon SDK is not in your environment. Install libdragon to `/opt/libdragon` or export `N64_INST=/path/to/libdragon`.
-- **Line ending error (`\r: command not found`)**:
-  If the repository was checked out with Windows CRLF line endings, run:
-  ```bash
-  dos2unix build_n64.sh
-  ```
-- **Error `submodule segagenesisrecomp not found`**:
-  Run `git submodule update --init --recursive`.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. **Never attach commercial ROMs or extracted game assets.**
 
----
+### Credits, licensing and legal notice
 
-### License & Attribution
+N64 port: [Sunshinin11](https://github.com/Sunshinin11) and contributors. Reverse-engineering foundation: [crabsmack/xmen2-pc](https://github.com/crabsmack/xmen2-pc). SDK: [libdragon](https://github.com/DragonMinded/libdragon).
 
-- Port source code is distributed under the open-source licenses of `crabsmack/xmen2-pc` and `libdragon`.
-- *X-Men 2: Clone Wars* is copyright and trademark of Sega Enterprises, Marvel Characters, Inc., and their respective owners.
-- This project does not contain, distribute, or condone the unauthorized distribution of copyrighted material.
+Original repository code is MIT-licensed, but **third-party components retain their respective licenses**, including a **PolyForm Noncommercial** dependency. Read [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) before redistribution or reuse. No rights to the original game are granted; X-Men and its characters belong to their respective owners.
