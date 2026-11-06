@@ -1,6 +1,6 @@
-/* unk_Snd_1FE5B4 - send driver command $20 with one byte argument, unless muted.
+/* unk_Snd_1FE5B4 - set master attenuation (GEMS command $20), unless muted.
  *
- * arg: the argument (low 8 bits). What command $20 does in the driver is not known.
+ * arg: master attenuation (low 8 bits; 0 is full volume).
  * Hand-written 68000 (Snd_Play's tail with command $20). */
 #include "xmen2.h"
 

@@ -1,28 +1,42 @@
-# Never commit the game. Supply your own dump (tools/common.py finds it).
+# Never commit the game ROMs or proprietary assets
 *.bin
 *.gen
 *.smd
 *.md.rom
 
-# Build outputs, including all generated C
+# Build outputs and generated binaries
 build/
 build-*/
+*.z64
+*.dfs
+*.elf
+*.o
+*.d
+
+# Generated audio assets
+*.pcm
+*.idx
+
+# Python artifacts
 .venv/
 __pycache__/
 *.pyc
 
-# Runner evidence/settings written next to executables
+# Logs and telemetry/test run data
+*.log
+*.manifest.json
+telemetria*.json
+
+# Backups and local scratch files
+backups/
+.claude/
+backlog*.md
+CLAUDE.local.md
+
+# Runner evidence / settings
 dispatch_misses*.toml
 floor_coverage*.toml
 interior_label_misses*.toml
 floor_unsafe*.toml
 settings.ini
 rom-*.cfg
-*.log
-
-.claude/worktrees/
-
-# Local only, never published: a task queue and notes about this machine
-backlog.md
-backlog-archive.md
-CLAUDE.local.md

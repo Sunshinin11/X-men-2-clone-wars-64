@@ -7,6 +7,10 @@
 
 void Z80_LoadDriver(void)
 {
+#if defined(XMEN2_N64) && defined(N64)
+	/* Native sample sequencing has no executable sound driver to upload. */
+	return;
+#else
 	unsigned short sr = plat_sr();
 	u8 *src = (u8 *)Snd_Z80Driver;
 	unsigned short n = (unsigned short)((u8 *)Snd_Z80DriverEnd - src);
@@ -22,4 +26,5 @@ void Z80_LoadDriver(void)
 	while (at != 0x2000)
 		Z80_RAM(at++) = 0;
 	plat_set_sr(sr);
+#endif
 }

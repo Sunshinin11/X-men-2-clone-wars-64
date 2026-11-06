@@ -279,7 +279,7 @@ def fn_table(protos: list[dict], wraps: list[dict]) -> list[str]:
     L = []
     L += ["", "struct FnEntry { const void *host; uint32_t addr; };",
           "static const FnEntry s_fns[] = {"]
-    for f in protos:
+    for f in sorted(protos, key=lambda f: f["addr"]):
         if not f["fragment"]:
             L.append(f"    {{ (const void *)&{f['name']}, 0x{f['addr']:06X}u }},")
     # inside its own file a C function's name is hc_<Name> (-D<Name>=hc_<Name>): a function that
@@ -288,12 +288,22 @@ def fn_table(protos: list[dict], wraps: list[dict]) -> list[str]:
         L.append(f"    {{ (const void *)&hc_{f['name']}, 0x{f['addr']:06X}u }},")
     L += ["};", "struct FnRef { uint32_t fn, target, value; };", "static const FnRef s_refs[] = {"]
     with open(common.GAME / "xmen2.fnrefs.csv", newline="") as fh:
-        for r in csv.DictReader(fh):
+        for r in sorted(csv.DictReader(fh), key=lambda r: (int(r["function"],16),int(r["target"],16))):
             L.append(f"    {{ 0x{r['function']}u, 0x{r['target']}u, 0x{r['value']}u }},")
     L += ["};",
+          f"static constexpr size_t s_addr_count = {sum(not f['fragment'] for f in protos)};",
+          "static FnEntry s_host_fns[sizeof s_fns / sizeof s_fns[0]];",
+          "#if defined(N64)",
+          'extern "C" void x2_background_service();',
+          "#endif",
           "namespace xm {",
           "static uint32_t s_cur_fn;   /* the C function running (the one whose references apply) */",
-          "void fn_enter(uint32_t fn, uint32_t *saved) { *saved = s_cur_fn; s_cur_fn = fn; }",
+          "void fn_enter(uint32_t fn, uint32_t *saved) {",
+          "    *saved = s_cur_fn; s_cur_fn = fn;",
+          "#if defined(N64)",
+          "    static unsigned service_counter; if (!(++service_counter & 63)) x2_background_service();",
+          "#endif",
+          "}",
           "void fn_leave(uint32_t saved) { s_cur_fn = saved; }",
           "uint32_t fn_current(void) { return s_cur_fn; }",
           "/* Every game function has its own host address: two at one means the linker folded",
@@ -303,33 +313,55 @@ def fn_table(protos: list[dict], wraps: list[dict]) -> list[str]:
           "{",
           "    static bool done;",
           "    if (done) return;",
-          "    done = true;",
           "    const size_t n = sizeof s_fns / sizeof s_fns[0];",
-          "    for (size_t i = 0; i < n; i++)",
-          "        for (size_t j = i + 1; j < n; j++)",
-          "            if (s_fns[i].host == s_fns[j].host && s_fns[i].addr != s_fns[j].addr)",
-          "                fatal(\"xm: $%06X and $%06X share one host address (identical code folded)\",",
-          "                      (unsigned)s_fns[i].addr, (unsigned)s_fns[j].addr);",
+          "    for (size_t i = 0; i < n; i++) s_host_fns[i] = s_fns[i];",
+          "    qsort(s_host_fns, n, sizeof(FnEntry), [](const void *a, const void *b) {",
+          "        uintptr_t x = (uintptr_t)((const FnEntry*)a)->host, y = (uintptr_t)((const FnEntry*)b)->host;",
+          "        return x < y ? -1 : x > y ? 1 : 0;",
+          "    });",
+          "    for (size_t i = 1; i < n; i++)",
+          "        if (s_host_fns[i-1].host == s_host_fns[i].host && s_host_fns[i-1].addr != s_host_fns[i].addr)",
+          "            fatal(\"xm: conflicting host function addresses\");",
+          "    done = true;",
           "}",
           "static uint32_t fn_addr(const void *host)",
           "{",
           "    fn_check();",
-          "    for (const FnEntry &e : s_fns) if (e.host == host) return e.addr;",
+          "    size_t lo=0, hi=sizeof s_host_fns / sizeof s_host_fns[0];",
+          "    while(lo<hi){size_t mid=(lo+hi)/2;if((uintptr_t)s_host_fns[mid].host<(uintptr_t)host)lo=mid+1;else hi=mid;}",
+          "    if(lo<sizeof s_host_fns / sizeof s_host_fns[0] && s_host_fns[lo].host==host)return s_host_fns[lo].addr;",
           "    fatal(\"xm::fn_value: %p is not a game function\", host);",
           "}",
           "uint32_t fn_value(const void *host)",
           "{",
           "    uint32_t t = fn_addr(host);",
-          "    for (const FnRef &r : s_refs) if (r.fn == s_cur_fn && r.target == t) return r.value;",
+          "    size_t lo=0,hi=sizeof s_refs/sizeof s_refs[0];",
+          "    while(lo<hi){size_t mid=(lo+hi)/2;const auto&r=s_refs[mid];if(r.fn<s_cur_fn||(r.fn==s_cur_fn&&r.target<t))lo=mid+1;else hi=mid;}",
+          "    if(lo<sizeof s_refs/sizeof s_refs[0] && s_refs[lo].fn==s_cur_fn && s_refs[lo].target==t)return s_refs[lo].value;",
           "    fatal(\"xm::fn_value: $%06X takes the address of $%06X, which the original never did\","
           " (unsigned)s_cur_fn, (unsigned)t);",
           "}",
           "const void *fn_host(uint32_t a)",
           "{",
           "    fn_check();",
-          "    for (const FnEntry &e : s_fns) if (e.addr == (a & 0xFFFFFFu)) return e.host;",
+          "    a &= 0xFFFFFFu; size_t lo=0,hi=s_addr_count;",
+          "    while(lo<hi){size_t mid=(lo+hi)/2;if(s_fns[mid].addr<a)lo=mid+1;else hi=mid;}",
+          "    if(lo<s_addr_count && s_fns[lo].addr==a)return s_fns[lo].host;",
           "    return nullptr;",
           "}",
+          "#if defined(X2_TEST_RDP_DEVICE)",
+          "void fn_validate_tables(){",
+          "    uint32_t saved=s_cur_fn; size_t n=sizeof s_fns/sizeof s_fns[0],refs=sizeof s_refs/sizeof s_refs[0];",
+          "    for(size_t i=0;i<n;i++)if(fn_addr(s_fns[i].host)!=s_fns[i].addr)fatal(\"host table mismatch\");",
+          "    for(size_t i=0;i<s_addr_count;i++)if(fn_host(s_fns[i].addr)!=s_fns[i].host)fatal(\"address table mismatch\");",
+          "    for(size_t i=0;i<refs;i++){const auto&r=s_refs[i];",
+          "        if(i&&s_refs[i-1].fn==r.fn&&s_refs[i-1].target==r.target)continue;",
+          "        s_cur_fn=r.fn; const void*h=fn_host(r.target);",
+          "        if(!h||fn_value(h)!=r.value)fatal(\"reference table mismatch $%06X/$%06X\",(unsigned)r.fn,(unsigned)r.target);",
+          "    }",
+          "    s_cur_fn=saved;fprintf(stderr,\"FUNCTION TABLES PASS entries=%zu refs=%zu\\n\",n,refs);",
+          "}",
+          "#endif",
           "}  /* namespace xm */", ""]
     return L
 
@@ -406,7 +438,7 @@ def native_calls(wraps: list[dict]) -> list[str]:
           "uint32_t call_native(uint32_t a, const narg *args, int n)",
           "{",
           "    a &= 0xFFFFFFu;",
-          "    for (int i = 0; i < 4 && a + 6u <= 0x400000u; i++) {   /* through jumps, as call_slots */",
+          "    for (int i = 0; i < 4 && a + 6u <= sizeof(g_rom); i++) {   /* through jumps, as call_slots */",
           "        uint16_t op = rom16(a);",
           "        if (op == 0x4EED) a = (0x200u + (uint32_t)(int32_t)(int16_t)rom16(a + 2)) & 0xFFFFFFu;",
           "        else if (op == 0x4EF9) a = (((uint32_t)rom16(a + 2) << 16) | rom16(a + 4)) & 0xFFFFFFu;",

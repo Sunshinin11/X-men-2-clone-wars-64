@@ -125,7 +125,11 @@ void     m68k_write8(uint32_t addr, uint8_t v);
 void     m68k_write16(uint32_t addr, uint16_t v);
 void     m68k_write32(uint32_t addr, uint32_t v);
 #endif
-extern uint8_t  g_rom[0x400000];
+#ifdef XMEN2_N64
+extern uint8_t g_rom[0x200000];
+#else
+extern uint8_t g_rom[0x400000];
+#endif
 }
 
 namespace xm {
@@ -141,7 +145,7 @@ inline void *host(uint32_t a)
         uint32_t top = a >> 24;
         if (top == 0x00u) return XM_RAM + (a24 & 0xFFFFu);
         if (top == 0xFFu) return XM_RAM_FFFF + (a24 & 0xFFFFu);
-    } else if (a == a24 && a24 < 0x400000u) {
+    } else if (a == a24 && a24 < sizeof(g_rom)) {
         return g_rom + a24;
     }
 #ifdef XMEN2_NATIVE
@@ -159,7 +163,7 @@ inline uint32_t addr(const void *p)
     uintptr_t u = (uintptr_t)p;
     if (u - (uintptr_t)XM_RAM < 0x10000u)      return 0x00FF0000u + (uint32_t)(u - (uintptr_t)XM_RAM);
     if (u - (uintptr_t)XM_RAM_FFFF < 0x10000u) return 0xFFFF0000u + (uint32_t)(u - (uintptr_t)XM_RAM_FFFF);
-    if (u - (uintptr_t)g_rom < 0x400000u)     return (uint32_t)(u - (uintptr_t)g_rom);
+    if (u - (uintptr_t)g_rom < sizeof(g_rom))     return (uint32_t)(u - (uintptr_t)g_rom);
 #ifdef XMEN2_NATIVE
     if (u - (uintptr_t)xm_region < 0x10000u)  return XM_REGION_BASE + (uint32_t)(u - (uintptr_t)xm_region);
 #endif
@@ -193,10 +197,17 @@ struct mem {
         uintptr_t a = u - (uintptr_t)xm_arena;
         if (a < 0x20000u) {                       /* the arena (both views) */
             uint32_t off = (uint32_t)a & 0xFFFFu;
+            #ifndef XMEN2_N64
             if (xm_tags[off] == TAG) { T v; memcpy(&v, b, sizeof v); return v; }
+#endif
+            #if defined(XMEN2_N64) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            typedef T Alias __attribute__((may_alias));
+            if (!(off & (sizeof(T)-1)) && off + sizeof(T) <= 0x10000u)
+                return *(const Alias *)(xm_arena + off);
+#endif
             return (T)mem_load_slow(off, (int)sizeof(T));
         }
-        if (u - (uintptr_t)g_rom < 0x400000u || u - (uintptr_t)xm_region < 0x10000u) {
+        if (u - (uintptr_t)g_rom < sizeof(g_rom) || u - (uintptr_t)xm_region < 0x10000u) {
             /* the ROM image, and players 3-4's region (phase 7 R5): big-endian */
             uint32_t v = 0;
             for (size_t i = 0; i < sizeof(T); i++) v = v << 8 | b[i];
@@ -218,7 +229,15 @@ struct mem {
         uintptr_t a = u - (uintptr_t)xm_arena;
         if (a < 0x20000u) {
             uint32_t off = (uint32_t)a & 0xFFFFu;
+            #ifndef XMEN2_N64
             if (xm_tags[off] == TAG) { memcpy(b, &v, sizeof v); return; }
+#endif
+            #if defined(XMEN2_N64) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            typedef T Alias __attribute__((may_alias));
+            if (!(off & (sizeof(T)-1)) && off + sizeof(T) <= 0x10000u) {
+                *(Alias *)(xm_arena + off) = v; return;
+            }
+#endif
             mem_store_slow(off, (int)sizeof(T), (uint32_t)v);
             return;
         }
@@ -227,7 +246,7 @@ struct mem {
             for (size_t i = sizeof(T); i--; ) { b[i] = (uint8_t)x; x >>= 8; }
             return;
         }
-        if (u - (uintptr_t)g_rom < 0x400000u) fatal("a store into the ROM image at $%06X", (unsigned)(u - (uintptr_t)g_rom));
+        if (u - (uintptr_t)g_rom < sizeof(g_rom)) fatal("a store into the ROM image at $%06X", (unsigned)(u - (uintptr_t)g_rom));
         if (u < 0x10000u) fatal("a store through a null reference (+$%04X)", (unsigned)u);
         memcpy(b, &v, sizeof v);
     }
@@ -392,7 +411,7 @@ inline bool in_game_memory(const void *p)
 {
     uintptr_t u = (uintptr_t)p;
     return u - (uintptr_t)XM_RAM < 0x10000u || u - (uintptr_t)XM_RAM_FFFF < 0x10000u
-        || u - (uintptr_t)g_rom < 0x400000u
+        || u - (uintptr_t)g_rom < sizeof(g_rom)
 #ifdef XMEN2_NATIVE
         || u - (uintptr_t)xm_region < 0x10000u
 #endif
