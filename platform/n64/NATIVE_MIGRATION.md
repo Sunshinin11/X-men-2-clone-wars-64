@@ -40,6 +40,21 @@ The target still requires the 8 MiB Expansion Pak. The complete original cartrid
 Host comparisons exercise a test implementation of RDP commands; they do not establish physical RDP behavior or hardware performance. Any subsequent emulator run is a test of the N64 ROM, not an emulator embedded in the port.
 
 
+## Real-console frame pacing (2026-11-20)
+
+Ares draws RDP work almost instantly; the console does not. Measured on hardware (Siberia, on-screen timing panel): game logic about 3-4 ms, CPU frame preparation about 4-6 ms, RDP about 10-15 ms. Run one after the other they exceeded the 16.7 ms VBlank, so the game presented every second VBlank and ran at half speed (30 FPS) while Ares showed 60.
+
+Changes in `rdp_scene.cpp` / `machine.cpp` (`X2_RDP_OVERLAP`, on by default):
+- The frame is handed to the RDP with `rdpq_detach_cb` instead of `rdpq_detach_wait`; the CPU goes on with the next frame's logic. The VBlank handler shows a frame only after its RDP callback fired.
+- The RDP reads a copy of VRAM (`rdp_vram`), updated from the dirty-page mask at the start of each frame, so the next frame's logic can write VRAM while the RDP draws.
+- `x2_rdp_prepare` (palettes, sprite packets, plane command cache, VRAM copy) runs before waiting for the previous frame's VBlank, so the RDP starts drawing right at the VBlank.
+- Only the 224..240 strip is cleared to black (the background fill covers the rest).
+- While waiting for the RDP, audio is mixed in 128-sample slices (before, the queue ran dry when the frame was late and the sound stuttered).
+
+Result on the console: the snow stage about 55 FPS (never below 54), later stages locked at 60.
+
+`X2_HUD=1` (game.mk) builds the timing panel: FPS, L logic, C CPU preparation, R CPU waiting for the RDP, W waiting for the screen swap, G RDP time from the start of drawing. Controller 1 L/R/Z hide plane B / plane A / sprites and C-up draws the planes in copy mode, to measure each layer on hardware. Copy mode was measured slower on the console (the per-rectangle CPU path), so it stays a diagnostic only.
+
 ## Delivered artifact
 
 ROM: xmen2_n64.z64, 24,117,248 bytes.

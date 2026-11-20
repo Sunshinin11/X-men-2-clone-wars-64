@@ -16,9 +16,70 @@ static inline void service_audio(){x2_service_audio();}
 static inline void service_audio(){}
 #endif
 
+#if X2_HUD
+// x2_dbg (botoes no console): 1 esconde o plano B, 2 esconde o plano A, 4 esconde os sprites, 8 planos no modo copia
+#ifndef X2_DBG_INIT
+#define X2_DBG_INIT 0
+#endif
+extern "C" { uint32_t x2_hud_rdp_wait_ticks, x2_hud_gpu_ticks, x2_dbg = X2_DBG_INIT, x2_cnt_rects, x2_cnt_loads; }
+// 16 = sem cargas de textura, 32 = sem os preenchimentos de fundo (testes de custo do teste automatico)
+#define X2_DBG(bit) (x2_dbg&(bit))
+#define X2_CNT(x) (x)
+#else
+#define X2_DBG(bit) 0
+#define X2_CNT(x) ((void)0)
+#endif
+
+// RDP em paralelo com a CPU: o quadro e entregue ao RDP sem esperar; a CPU segue para a logica do proximo
+// quadro e so espera o RDP quando for mexer de novo nos buffers que ele le. No console o RDP leva ~10 ms por
+// quadro (no Ares ~0), e somado a CPU estourava os 16,7 ms do VBlank: o jogo caia para 30 FPS (meia velocidade).
+#ifndef X2_RDP_OVERLAP
+#define X2_RDP_OVERLAP 1
+#endif
+#if defined(N64) && X2_RDP_OVERLAP
+// Copia da VRAM que o RDP le: a logica do quadro seguinte escreve na VRAM do jogo enquanto o RDP desenha.
+static uint8_t rdp_vram[0x10000] __attribute__((aligned(16)));
+#define X2_RDP_VRAM(v) (rdp_vram)
+static volatile bool s_rdp_busy;
+extern "C" void x2_service_audio_idle();
+static uint32_t s_draw_t0;
+extern "C" { volatile bool x2_frame_rdp_done = true; }   // a tela so troca de quadro quando o RDP termina
+static void rdp_done_cb(void*){
+#if X2_HUD
+ x2_hud_gpu_ticks+=TICKS_READ()-s_draw_t0;
+#endif
+ s_rdp_busy=false;x2_frame_rdp_done=true;
+}
+static void wait_rdp(){
+ if(!s_rdp_busy)return;
+#if X2_HUD
+ uint32_t t0=TICKS_READ();
+#endif
+ while(s_rdp_busy)x2_service_audio_idle();
+#if X2_HUD
+ x2_hud_rdp_wait_ticks+=TICKS_READ()-t0;
+#endif
+}
+static void finish_render(){
+ x2_frame_rdp_done=false;s_rdp_busy=true;
+ rdpq_detach_cb(rdp_done_cb,nullptr);
+ rspq_flush();
+}
+#else
+#define X2_RDP_VRAM(v) ((v)->vram)
+static void wait_rdp(){}
+#if X2_HUD
+static void finish_render(){
+ uint32_t t0=TICKS_READ();
+ rdpq_detach_wait();
+ x2_hud_rdp_wait_ticks+=TICKS_READ()-t0;
+}
+#else
 static void finish_render(){
  rdpq_detach_wait();
 }
+#endif
+#endif
 
 static void render_audio(){service_audio();}
 
@@ -77,7 +138,7 @@ static void prepare_planes(GVDP*v,uint64_t dirty){
     uint64_t mask = batch.active_mask[pri];
     while(mask){
      unsigned p = __builtin_ctzll(mask);
-     const uint8_t* source = v->vram + p * 1024;
+     const uint8_t* source = X2_RDP_VRAM(v) + p * 1024;
      auto& image = dst[total_cmds++];
      image[0] = 0x27000000u; image[1] = 0;
      image[2] = 0x3d000000u | (FMT_I8 << 19) | 3; image[3] = PhysicalAddr(source);
@@ -127,6 +188,7 @@ static uint16_t material_tlut[5][2][2][64] __attribute__((aligned(16)));
 static X2NativeSprites native_sprites;
 
 static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,int clip_x0=0,int clip_y0=0,int clip_x1=320,int clip_y1=224){
+ wait_rdp();   // efeitos de sombra/brilho desenham varias passadas: cada uma espera a anterior
  if(!gvdp_display_enabled(v)){
   rdpq_attach(fb,NULL);
   rdpq_set_mode_fill(RGBA32(0,0,0,255));
@@ -139,10 +201,11 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  rdpq_attach(fb,NULL);
  rdpq_set_scissor(clip_x0,clip_y0,clip_x1,(clip_x0==0&&clip_y0==0&&clip_x1==320&&clip_y1==224)?240:clip_y1);
  rdpq_set_mode_fill(RGBA32(0,0,0,255));
- rdpq_fill_rectangle(0,0,320,240);
+ // so a faixa abaixo da area do jogo (224..240): o resto e coberto pela cor de fundo logo abaixo
+ if(!X2_DBG(32))rdpq_fill_rectangle(0,224,320,240);
  unsigned bg=pal[(v->reg[7]&63)+((material==1||material==3)?64:0)];
  rdpq_set_mode_fill(RGBA32((uint8_t)(((bg>>11)&31)*255/31),(uint8_t)(((bg>>6)&31)*255/31),(uint8_t)(((bg>>1)&31)*255/31),255));
- rdpq_fill_rectangle(0,0,320,224);
+ if(!X2_DBG(32))rdpq_fill_rectangle(0,0,320,224);
  rdpq_set_mode_standard();
  rdpq_mode_filter(FILTER_POINT);
  rdpq_mode_dithering(DITHER_NONE_NONE);
@@ -169,9 +232,11 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  }
 #endif
  static int cur_tmem_page = -1;
- const uint8_t*texture_base=v->vram;
+ const uint8_t*texture_base=X2_RDP_VRAM(v);
 
  auto upload=[&](unsigned page){
+  X2_CNT(x2_cnt_loads++);
+  if(X2_DBG(16)){cur_tmem_page=(int)page;return;}   // teste: sem cargas de textura (imagem errada, so mede o custo)
 #if X2_PLANE_DMA
   rdpq_set_texture_image_raw(0,PhysicalAddr(texture_base+page*1024),FMT_I8,4,256);
   rdpq_load_tile(TILE6,0,0,4,256);
@@ -188,23 +253,78 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  auto draw=[&](const X2Tile&t){
   if(t.x+t.w<=clip_x0||t.x>=clip_x1||t.y+t.h<=clip_y0||t.y>=clip_y1)return;
   X2RectWords r=x2_rect_words(t);__rdpq_texture_rectangle(r.w[0],r.w[1],r.w[2],r.w[3]);
+  X2_CNT(x2_cnt_rects++);
  };
  auto draw_spr_tile=[&](const X2Tile&t,bool direct){
   if(t.x+t.w<=clip_x0||t.x>=clip_x1||t.y+t.h<=clip_y0||t.y>=clip_y1)return;
   int p = (t.attr & 2047) >> 5;
   int key = direct ? p : p + 64;
-  if(key != cur_tmem_page){ texture_base = direct ? v->vram : native_sprites.pixels; upload(p); cur_tmem_page = key; }
+  if(key != cur_tmem_page){ texture_base = direct ? X2_RDP_VRAM(v) : native_sprites.pixels; upload(p); cur_tmem_page = key; }
   draw(t);
  };
 
+#if X2_HUD && X2_PLANE_DMA
+ // Planos no modo copia do RDP (4 pixels por ciclo): tiles sem espelho horizontal numa passada em COPY,
+ // os espelhados (o COPY nao aceita dsdx negativo) numa segunda passada no modo normal.
+ auto std_mode=[&](){
+  rdpq_set_mode_standard();rdpq_mode_filter(FILTER_POINT);rdpq_mode_dithering(DITHER_NONE_NONE);
+  rdpq_mode_combiner(RDPQ_COMBINER_TEX);rdpq_mode_alphacompare(1);rdpq_mode_tlut(TLUT_RGBA16);
+ };
+ auto plane_copy=[&](int pri,X2DualBatch& compact){
+  for(int pass=0;pass<2;pass++){
+   if(pass==0){rdpq_set_mode_copy(true);rdpq_mode_tlut(TLUT_RGBA16);}else std_mode();
+   uint64_t mask=compact.active_mask[pri];
+   while(mask){
+    unsigned p=__builtin_ctzll(mask);
+    bool page_loaded=false;
+    for(unsigned i=compact.head[pri][p];i!=X2DualBatch::END;i=compact.nodes[i].next){
+     const auto& n=compact.nodes[i];
+     if(((n.attr&2048)!=0)!=(pass==1))continue;
+     X2ColData cd=compact.col_data[n.c];
+     cd.xw14=compact.col_data[n.last_col].xw14;
+     const auto& rd=compact.row_data[n.r];
+     if(cd.xw14<=unsigned(clip_x0)*16384||cd.x14>=unsigned(clip_x1)*16384||
+        rd.yh2<=unsigned(clip_y0)*4||rd.y2>=unsigned(clip_y1)*4)continue;
+     if(!page_loaded){upload(p);page_loaded=true;}
+     unsigned pal_idx=((uint32_t)n.attr>>13)&3;
+     int s=(n.attr&2048)?(7-cd.sx):cd.sx;
+     int srow=(n.attr&4096)?(7-rd.sy):rd.sy;
+     int texy=((n.attr&31)<<3)+srow;
+     __rdpq_texture_rectangle(cd.xw14|rd.yh2,(pal_idx<<24)|cd.x14|rd.y2,
+                              ((uint32_t)s<<21)|((uint32_t)texy<<5),k_step[(n.attr>>11)&3]);
+    }
+    mask&=mask-1;
+   }
+  }
+ };
+#endif
+
  auto plane=[&](int which,int pri,X2DualBatch& compact){
-  texture_base=v->vram;cur_tmem_page=-1;
+  texture_base=X2_RDP_VRAM(v);cur_tmem_page=-1;
+#if X2_HUD
+  if(x2_dbg&(which?1:2))return;
+#endif
   set_material(pri,0);
   if(x2_plane_grid(v,which)){
+#if X2_HUD && X2_PLANE_DMA
+   if(x2_dbg&8){plane_copy(pri,compact);return;}
+#endif
 #if X2_PLANE_DMA && X2_PLANE_CMD_CACHE
    if(full_scene){
     const auto& saved = plane_cache[which];
     unsigned cnt = saved.cmd_count[pri];
+    X2_CNT((x2_cnt_rects+=saved.rect_count[pri],x2_cnt_loads+=saved.page_count[pri]));
+#if X2_HUD
+    if(cnt&&X2_DBG(16)){   // teste: mesma lista sem as cargas de textura (2 comandos por pagina)
+     static uint32_t only_rects[X2DualBatch::CAPACITY + 2 * 64 * 2][4] __attribute__((aligned(16)));
+     unsigned n=0;const auto* src=cached_plane_cmds[which]+saved.off[pri];
+     for(unsigned k=0;k<cnt;k++){uint32_t op=src[k][0]>>24;if(op==0x27||op==0x26)continue;memcpy(only_rects[n++],src[k],16);}
+     data_cache_hit_writeback(only_rects,n*16);
+     __rdpq_autosync_use(AUTOSYNC_PIPE|AUTOSYNC_TILES|AUTOSYNC_TMEMS);
+     if(n)rdpq_exec(only_rects,n*16);
+     cnt=0;
+    }
+#endif
     if(cnt){
      __rdpq_autosync_use(AUTOSYNC_PIPE|AUTOSYNC_TILES|AUTOSYNC_TMEMS);
      rdpq_exec(cached_plane_cmds[which] + saved.off[pri], cnt * sizeof(cached_plane_cmds[0][0]));
@@ -249,6 +369,9 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  // 3. Draw Sprites Priority 0
  set_material(0,1);
  texture_base=native_sprites.pixels;cur_tmem_page=-1;
+#if X2_HUD
+ if(!(x2_dbg&4))
+#endif
  for(int i=int(native_sprites.count)-1; i>=0; i--){
   if(!(native_sprites.cells[i].attr&0x8000))draw_spr_tile(native_sprites.cells[i],native_sprites.direct[i]);
  }
@@ -262,6 +385,9 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  // 6. Draw Sprites Priority 1
  set_material(1,1);
  texture_base=native_sprites.pixels;cur_tmem_page=-1;
+#if X2_HUD
+ if(!(x2_dbg&4))
+#endif
  for(int i=int(native_sprites.count)-1; i>=0; i--){
   if(native_sprites.cells[i].attr&0x8000)draw_spr_tile(native_sprites.cells[i],native_sprites.direct[i]);
  }
@@ -270,7 +396,11 @@ static bool draw_scene(surface_t*fb,GVDP*v,const uint16_t*pal,unsigned material,
  return true;
 }
 
-extern "C" bool x2_rdp_draw(surface_t*fb,GVDP*v,const uint16_t*pal){
+// Parte de CPU do quadro (paletas, sprites, lista dos planos, copia da VRAM). Separada do desenho para rodar
+// antes da troca de tela: assim o RDP comeca a desenhar logo no VBlank, em vez de esperar esta preparacao.
+static bool s_prepared;
+extern "C" void x2_rdp_prepare(GVDP*v,const uint16_t*pal){
+ wait_rdp();   // o RDP do quadro anterior ainda le paletas, sprites, comandos em cache e a copia da VRAM
  bool effects=(v->reg[12]&8)!=0;
  static uint16_t previous_palette[192];static bool palette_valid=false,previous_effects=false;
  if(!palette_valid||previous_effects!=effects||memcmp(previous_palette,pal,sizeof previous_palette)){
@@ -289,7 +419,12 @@ extern "C" bool x2_rdp_draw(surface_t*fb,GVDP*v,const uint16_t*pal){
  else native_sprites.count=0;
  if(native_sprites.packed)data_cache_hit_writeback(native_sprites.pixels,native_sprites.packed*32);
 
-#ifdef N64
+#if defined(N64) && X2_RDP_OVERLAP
+ const uint64_t dirty_pages=x2_video_dirty_pages;
+ uint64_t dirty=dirty_pages;
+ while(dirty){unsigned page=__builtin_ctzll(dirty);memcpy(rdp_vram+page*1024,v->vram+page*1024,1024);data_cache_hit_writeback(rdp_vram+page*1024,1024);dirty&=dirty-1;}
+ x2_video_dirty_pages=0;
+#elif defined(N64)
  const uint64_t dirty_pages=x2_video_dirty_pages;
  uint64_t dirty=dirty_pages;
  while(dirty){unsigned page=__builtin_ctzll(dirty);data_cache_hit_writeback(v->vram+page*1024,1024);dirty&=dirty-1;}
@@ -300,7 +435,17 @@ extern "C" bool x2_rdp_draw(surface_t*fb,GVDP*v,const uint16_t*pal){
 #endif
  prepare_planes(v,dirty_pages);
  render_audio();
+ s_prepared=true;
+}
 
+// Desenha o quadro preparado. Sem x2_rdp_prepare antes, prepara aqui mesmo.
+extern "C" bool x2_rdp_draw(surface_t*fb,GVDP*v,const uint16_t*pal){
+ if(!s_prepared)x2_rdp_prepare(v,pal);
+ s_prepared=false;
+#if defined(N64) && X2_RDP_OVERLAP
+ s_draw_t0=TICKS_READ();
+#endif
+ const bool effects=(v->reg[12]&8)!=0;
  if(!draw_scene(fb,v,pal,effects?1:0))return false;
  if(!effects||!gvdp_display_enabled(v)){
   return true;

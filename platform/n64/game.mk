@@ -6,6 +6,10 @@ N64_ROM_SAVETYPE := none
 include $(N64_INST)/include/n64.mk
 .DEFAULT_GOAL := all
 X2_AUDIO_MODE ?= 3
+# 1 = painel de tempos na tela (L logica, C CPU do desenho, R espera do RDP, W espera do VBlank), para medir no console
+X2_HUD ?= 0
+# estado inicial dos botoes do painel (8 = planos no modo copia); so vale com X2_HUD=1
+X2_DBG_INIT ?= 0
 ifneq ($(X2_AUDIO_MODE),3)
 $(error Production N64 audio requires native sample mode 3)
 endif
@@ -16,6 +20,7 @@ CPPFLAGS := -MMD -MP -fno-strict-aliasing -include platform/n64/video_native.h \
 	-DX2_AUDIO_OPT=1 \
 	-DX2_PACE_SLICE_OPT=1 \
 	-DX2_PLANE_CMD_CACHE=1 \
+	-DX2_HUD=$(X2_HUD) -DX2_DBG_INIT=$(X2_DBG_INIT) \
 	-Isegagenesisrecomp/runner -Isegagenesisrecomp/runner/include \
 	-Iplatform/n64 -Igame/include -Igame/runtime -Iplatform -Iplatform/native -Isegagenesisrecomp/runner/video
 SOURCES := $(wildcard build/n64/handbridge/handc/*.cpp)

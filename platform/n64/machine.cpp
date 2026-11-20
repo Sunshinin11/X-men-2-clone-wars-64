@@ -30,6 +30,7 @@ void fn_validate_tables();
 }
 static GVDP video __attribute__((aligned(16)));
 extern "C" bool x2_rdp_draw(surface_t*,GVDP*,const uint16_t*);
+extern "C" void x2_rdp_prepare(GVDP*,const uint16_t*);
 static uint16_t palette[256],sr=0x2700;
 static uint8_t io[16]={0xa0},zram[8192];
 static bool in_irq;
@@ -45,10 +46,18 @@ static volatile uint32_t pending_vblank,last_scheduled_vblank;
 static volatile uint32_t g_last_vblank_ticks;
 static uint32_t g_last_present_ticks;
 
+#ifndef X2_RDP_OVERLAP
+#define X2_RDP_OVERLAP 1
+#endif
+#if X2_RDP_OVERLAP
+extern "C" volatile bool x2_frame_rdp_done;   // rdp_scene.cpp: o RDP terminou o quadro pendente
+#else
+static const bool x2_frame_rdp_done=true;
+#endif
 static void vblank_cb(void*) {
  ++g_vblanks;
  g_last_vblank_ticks=TICKS_READ();
- if(pending_surface&&x2_vblank_reached(g_vblanks,pending_vblank)){
+ if(pending_surface&&x2_frame_rdp_done&&x2_vblank_reached(g_vblanks,pending_vblank)){
   display_show(pending_surface);
   last_scheduled_vblank=g_vblanks;
   observing_display=true;
@@ -63,6 +72,8 @@ static void vblank_cb(void*) {
 }
 
 extern "C" void x2_service_audio(){g_x2_audio.render_and_submit_emergency();}
+// tempo ocioso (CPU esperando o RDP): completa a fila de audio em pedacos pequenos
+extern "C" void x2_service_audio_idle(){g_x2_audio.service_if_below(-1,128);}
 extern "C" void x2_background_service(){
  if(native_audio_bus_held)return;
  static uint32_t last;uint32_t now=TICKS_READ();
@@ -90,18 +101,99 @@ static void colour(void*,unsigned i,uint16_t c){if(i>=64)return;for(int k=0;k<3;
 static void vint(){if(in_irq||!(video.reg[1]&32)||((sr>>8)&7)>=6)return;in_irq=true;g_logic_ticks++;unsigned old=sr;sr=(sr&~0x700)|0x600;auto mark=xm::frame_mark();xm::frame_alloc(26);uint32_t d0=xm::g_d0;Irq_VBlankVector();xm::g_d0=d0;xm::frame_release(mark);sr=old;in_irq=false;}
 
 #ifdef N64
+#if X2_HUD
+// Painel de tempos na tela (sem USB): media de 30 quadros, em ms.
+// L = logica do jogo, C = CPU preparando o desenho, R = CPU parada esperando o RDP,
+// W = espera pela troca de tela, G = tempo do RDP no quadro (do inicio do desenho ate ele terminar).
+extern "C" uint32_t x2_hud_rdp_wait_ticks, x2_hud_gpu_ticks, x2_dbg;
+static uint32_t hud_t_end_present,hud_acc_logic,hud_acc_cpu,hud_acc_rdp,hud_acc_wait,hud_frames,hud_t0;
+static char hud_line[64]="medindo...";
+static void hud_draw(surface_t*fb){
+ graphics_draw_box(fb,8,226,304,10,graphics_make_color(0,0,0,255));
+ graphics_set_color(graphics_make_color(255,255,0,255),0);
+ graphics_draw_text(fb,10,227,hud_line);
+}
+static void hud_frame_done(){
+ uint32_t now=TICKS_READ();
+ if(++hud_frames==30){
+  uint32_t span=now-hud_t0;unsigned fps10=span?(unsigned)(300ull*TICKS_PER_SECOND/span):0;
+  auto ms10=[&](uint32_t t){return (unsigned)((uint64_t)t*10000ull/TICKS_PER_SECOND/30);};   // decimos de ms por quadro
+  const uint32_t g=x2_hud_gpu_ticks;x2_hud_gpu_ticks=0;
+  // marcas: B/A/S = plano B, plano A, sprites (minuscula = escondido); CP = planos no modo copia
+  snprintf(hud_line,sizeof hud_line,"%u.%u L%u.%u C%u.%u R%u.%u W%u.%u G%u.%u %c%c%c%s",fps10/10,fps10%10,
+   ms10(hud_acc_logic)/10,ms10(hud_acc_logic)%10,ms10(hud_acc_cpu)/10,ms10(hud_acc_cpu)%10,
+   ms10(hud_acc_rdp)/10,ms10(hud_acc_rdp)%10,ms10(hud_acc_wait)/10,ms10(hud_acc_wait)%10,ms10(g)/10,ms10(g)%10,
+   (x2_dbg&1)?'b':'B',(x2_dbg&2)?'a':'A',(x2_dbg&4)?'s':'S',(x2_dbg&8)?" CP":"");
+  hud_acc_logic=hud_acc_cpu=hud_acc_rdp=hud_acc_wait=0;hud_frames=0;hud_t0=now;
+ }
+}
+#endif
+static void wait_shown(uint32_t target);
+static uint32_t s_prev_target;static surface_t*s_prev_fb;
 static void present(){
+#if X2_HUD
+ uint32_t hud_t_start=TICKS_READ();
+ if(hud_t_end_present)hud_acc_logic+=hud_t_start-hud_t_end_present;
+ if(!hud_t0)hud_t0=hud_t_start;
+ x2_hud_rdp_wait_ticks=0;
+ {  // L/R/Z/C-cima alternam plano B, plano A, sprites e modo copia (botoes que o jogo nao usa)
+  static joypad_buttons_t prev;   // borda propria: o jogo chama joypad_poll mais de uma vez por quadro
+  joypad_buttons_t h=joypad_get_buttons_held(JOYPAD_PORT_1);
+  if(h.l&&!prev.l)x2_dbg^=1;
+  if(h.r&&!prev.r)x2_dbg^=2;
+  if(h.z&&!prev.z)x2_dbg^=4;
+  if(h.c_up&&!prev.c_up)x2_dbg^=8;
+  prev=h;
+ }
+#endif
+#if X2_RDP_OVERLAP
+ // prepara o quadro (CPU) enquanto o anterior ainda espera o VBlank; depois da troca, o RDP comeca na hora
+ x2_rdp_prepare(&video,palette);
+#if X2_HUD
+ uint32_t hud_t_prep=TICKS_READ()-hud_t_start;
+#endif
+ // o quadro anterior vai para a tela no primeiro VBlank depois que o RDP termina; so entao este comeca
+ if(s_prev_fb)wait_shown(s_prev_target);
+#if X2_HUD
+ {uint32_t t=TICKS_READ();hud_acc_wait+=t-hud_t_start-hud_t_prep;hud_acc_cpu+=hud_t_prep;if(s_prev_fb)hud_draw(s_prev_fb);}
+#endif
+#endif
+#if X2_HUD
+ uint32_t hud_t_cpu0=TICKS_READ();
+#endif
  g_x2_audio.render_and_submit_emergency();
  surface_t*fb=display_get();
  bool ok=x2_rdp_draw(fb,&video,palette);
  assertf(ok,"Unsupported native video mode r1=%02x r12=%02x",video.reg[1],video.reg[12]);
+#if X2_HUD
+ uint32_t hud_t_after_draw=TICKS_READ();
+ hud_acc_rdp+=x2_hud_rdp_wait_ticks;hud_acc_cpu+=hud_t_after_draw-hud_t_cpu0-x2_hud_rdp_wait_ticks;
+#if !X2_RDP_OVERLAP
+ hud_draw(fb);
+#endif
+#endif
  g_x2_audio.render_and_submit_emergency();
 
  disable_interrupts();
  bool late;
  uint32_t target=x2_next_present_vblank(g_vblanks,last_scheduled_vblank,observing_display,late,X2_PRESENT_VBLANKS);
  pending_vblank=target;pending_surface=fb;enable_interrupts();
-
+#if X2_RDP_OVERLAP
+ s_prev_target=target;s_prev_fb=fb;   // nao espera: a CPU segue para o proximo quadro enquanto o RDP desenha
+#else
+ wait_shown(target);
+#endif
+ g_last_present_ticks=TICKS_READ();
+#if X2_HUD
+ {uint32_t t=TICKS_READ();
+#if !X2_RDP_OVERLAP
+  hud_acc_wait+=t-hud_t_after_draw;
+#endif
+  hud_t_end_present=t;hud_frame_done();}
+#endif
+}
+// espera o quadro agendado ir para a tela, misturando audio no tempo livre
+static void wait_shown(uint32_t target){
 #if X2_AUDIO_OPT && X2_PACE_SLICE_OPT
  {
   static uint32_t q1_since=0;
@@ -110,6 +202,9 @@ static void present(){
    uint32_t now_p=TICKS_READ();
    uint32_t vb_now=g_vblanks,vb_t0=g_last_vblank_ticks;
    int32_t vb_rem=(int32_t)(target-vb_now);
+   // VBlank alvo ja passou e o quadro ainda nao trocou: esta esperando o RDP terminar. A troca acontece na
+   // interrupcao do VBlank seguinte, entao misturar audio aqui nao atrasa nada (antes a fila secava e o som picotava).
+   if(vb_rem<=0)return g_x2_audio.service_if_below(-1,128);
    uint32_t elapsed_in_vb=now_p-vb_t0;
    uint32_t period=TICKS_PER_SECOND/60;
    uint32_t rem_ticks=vb_rem>0
@@ -180,7 +275,6 @@ static void present(){
 #else
  while(pending_surface)g_x2_audio.render_and_submit();
 #endif
- g_last_present_ticks=TICKS_READ();
 }
 #else
 static void present(){
